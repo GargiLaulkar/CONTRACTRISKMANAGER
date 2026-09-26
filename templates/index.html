@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Contract Risk Explainer - Instant plain-English risk analysis for contracts, Terms of Service, and agreements.">
+    <title>Contract Risk Explainer</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="brand">
+                <div class="brand-icon">⚖️</div>
+                <div class="brand-text">
+                    <h1>Contract Risk Explainer</h1>
+                    <p>Detect risky clauses, hidden liabilities, and unfair terms with plain-English insights</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="main-content">
+            <!-- Input Section -->
+            <section class="card input-section" aria-labelledby="input-heading">
+                <div class="section-top">
+                    <h2 id="input-heading">Paste Agreement or Terms</h2>
+                    <div class="sample-actions">
+                        <span class="sample-label">Try sample:</span>
+                        <button type="button" class="btn btn-sm btn-ghost" id="sample-tos-btn">SaaS Terms</button>
+                        <button type="button" class="btn btn-sm btn-ghost" id="sample-nda-btn">Strict NDA</button>
+                    </div>
+                </div>
+
+                <div class="textarea-wrapper">
+                    <textarea 
+                        id="contract-input" 
+                        placeholder="Paste your contract, policy, Terms of Service, or NDA clauses here... e.g. 'You grant us an irrevocable, royalty-free, perpetual license to all uploaded content...'"
+                        rows="9"
+                    ></textarea>
+                </div>
+
+                <div class="input-footer">
+                    <div class="char-count" id="char-count">0 characters</div>
+                    <div class="action-buttons">
+                        <button type="button" class="btn btn-secondary" id="clear-btn">Clear</button>
+                        <button type="button" class="btn btn-primary" id="analyze-btn">
+                            <span class="btn-text">Analyze Contract</span>
+                            <span class="btn-loader" style="display: none;"></span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Error Banner -->
+            <div id="error-banner" class="alert-box error-alert" style="display: none;" role="alert">
+                <div class="alert-icon">⚠️</div>
+                <div class="alert-content">
+                    <strong id="error-title">Analysis Failed</strong>
+                    <p id="error-message">Something went wrong.</p>
+                </div>
+                <button type="button" class="alert-close" id="close-error-btn" aria-label="Close error">&times;</button>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loading-state" class="loading-container card" style="display: none;">
+                <div class="spinner"></div>
+                <h3>Evaluating Risk Provisions...</h3>
+                <p class="loading-subtitle">Splitting clauses and determining consumer risk levels</p>
+            </div>
+
+            <!-- Results Section -->
+            <section id="results-section" class="results-section" style="display: none;">
+                <!-- Overall Score Card -->
+                <div class="card score-card">
+                    <div class="score-main">
+                        <div class="score-badge-circle" id="score-badge-circle">
+                            <span class="score-number" id="overall-score-num">--</span>
+                            <span class="score-max">/100</span>
+                        </div>
+                        <div class="score-details">
+                            <div class="score-tier" id="score-tier-label">Calculating Risk...</div>
+                            <p class="score-summary" id="score-summary-text">
+                                Overall risk score based on clause severity and potential liabilities.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="clause-stats" id="clause-stats">
+                        <div class="stat-pill stat-high"><span class="stat-dot"></span> <span id="count-high">0</span> High Risk</div>
+                        <div class="stat-pill stat-medium"><span class="stat-dot"></span> <span id="count-medium">0</span> Medium Risk</div>
+                        <div class="stat-pill stat-low"><span class="stat-dot"></span> <span id="count-low">0</span> Low Risk</div>
+                    </div>
+                </div>
+
+                <!-- Clause Breakdown Header -->
+                <div class="clauses-header">
+                    <h2>Clause Breakdown (<span id="total-clauses-count">0</span>)</h2>
+                    <div class="filter-group">
+                        <button class="filter-btn active" data-filter="all">All</button>
+                        <button class="filter-btn" data-filter="high">High</button>
+                        <button class="filter-btn" data-filter="medium">Medium</button>
+                        <button class="filter-btn" data-filter="low">Low</button>
+                    </div>
+                </div>
+
+                <!-- Clauses Container -->
+                <div class="clauses-list" id="clauses-container">
+                    <!-- Dynamic clause cards will be injected here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
