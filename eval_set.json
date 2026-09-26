@@ -1,0 +1,92 @@
+[
+  {
+    "id": 1,
+    "text": "Customer agrees to waive all rights to legal action against Company for any damages whatsoever, including damages resulting from Company's gross negligence or willful misconduct.",
+    "expected_risk_level": "high",
+    "category": "Liability Waiver"
+  },
+  {
+    "id": 2,
+    "text": "All data, materials, and content uploaded or submitted by Customer become the permanent, exclusive, and irrevocable property of Company with perpetual rights to sell or monetize.",
+    "expected_risk_level": "high",
+    "category": "Data Ownership"
+  },
+  {
+    "id": 3,
+    "text": "This subscription shall automatically renew annually at Company's then-current rates with unlimited price increases, and Customer forfeits any right to refund or mid-term cancellation.",
+    "expected_risk_level": "high",
+    "category": "Auto-Renewal & Pricing"
+  },
+  {
+    "id": 4,
+    "text": "Company reserves the sole right to alter, modify, or terminate any terms of this agreement at any time without prior notice, effective immediately upon posting.",
+    "expected_risk_level": "high",
+    "category": "Unilateral Modification"
+  },
+  {
+    "id": 5,
+    "text": "For a period of 5 years following termination, Receiving Party shall not engage in, consult for, or invest in any competing business entity worldwide.",
+    "expected_risk_level": "high",
+    "category": "Non-Compete"
+  },
+  {
+    "id": 6,
+    "text": "Any dispute arising under this agreement shall be settled solely through confidential, individual binding arbitration, and Customer waives all rights to join class action lawsuits.",
+    "expected_risk_level": "medium",
+    "category": "Dispute Resolution"
+  },
+  {
+    "id": 7,
+    "text": "Late payments beyond 30 days shall accrue interest at a rate of 1.5% per month (18% annually) or the maximum legal rate, plus collection costs.",
+    "expected_risk_level": "medium",
+    "category": "Late Fees"
+  },
+  {
+    "id": 8,
+    "text": "Customer grants Company a non-exclusive, royalty-free license to use Customer's trade name, logo, and public feedback in marketing materials and public case studies.",
+    "expected_risk_level": "medium",
+    "category": "Marketing Rights"
+  },
+  {
+    "id": 9,
+    "text": "This agreement shall be governed exclusively by the laws of the Cayman Islands, and all proceedings must take place exclusively in Grand Cayman courts.",
+    "expected_risk_level": "medium",
+    "category": "Jurisdiction"
+  },
+  {
+    "id": 10,
+    "text": "Termination for convenience requires at least 90 days prior written notice sent via registered mail to Company headquarters.",
+    "expected_risk_level": "medium",
+    "category": "Termination Notice"
+  },
+  {
+    "id": 11,
+    "text": "Either party may terminate this agreement without cause upon providing thirty (30) days prior written notice to the other party.",
+    "expected_risk_level": "low",
+    "category": "Standard Termination"
+  },
+  {
+    "id": 12,
+    "text": "Invoices are issued monthly and shall be paid in full within thirty (30) days of receipt.",
+    "expected_risk_level": "low",
+    "category": "Payment Terms"
+  },
+  {
+    "id": 13,
+    "text": "Confidential Information shall not include information that is or becomes publicly known through no breach of this agreement by the receiving party.",
+    "expected_risk_level": "low",
+    "category": "Confidentiality"
+  },
+  {
+    "id": 14,
+    "text": "Neither party shall be liable for failure to perform its obligations if such failure results from acts of God, flood, earthquake, or other natural disasters.",
+    "expected_risk_level": "low",
+    "category": "Force Majeure"
+  },
+  {
+    "id": 15,
+    "text": "This agreement constitutes the entire understanding between the parties and supersedes all prior oral or written agreements or understandings.",
+    "expected_risk_level": "low",
+    "category": "Integration / Entire Agreement"
+  }
+]

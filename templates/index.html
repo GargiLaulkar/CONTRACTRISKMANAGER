@@ -3,19 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Contract Risk Explainer - Instant plain-English risk analysis for contracts, Terms of Service, and agreements.">
+    <meta name="description" content="Contract Risk Explainer - Professional legal redline analysis, risk detection, and negotiation rewrites.">
     <title>Contract Risk Explainer</title>
     <link rel="stylesheet" href="/static/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="app-container">
         <!-- Header -->
         <header class="header">
             <div class="brand">
-                <div class="brand-icon">⚖️</div>
+                <div class="brand-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 3v18"></path>
+                        <path d="M6 8l6-3 6 3"></path>
+                        <path d="M6 8l-3 7a3 3 0 0 0 6 0L6 8z"></path>
+                        <path d="M18 8l-3 7a3 3 0 0 0 6 0L18 8z"></path>
+                        <path d="M4 21h16"></path>
+                    </svg>
+                </div>
                 <div class="brand-text">
                     <h1>Contract Risk Explainer</h1>
                     <p>Detect risky clauses, hidden liabilities, and unfair terms with plain-English insights</p>
@@ -28,7 +36,7 @@
             <!-- Input Section -->
             <section class="card input-section" aria-labelledby="input-heading">
                 <div class="section-top">
-                    <h2 id="input-heading">Paste Agreement or Terms</h2>
+                    <h2 id="input-heading">Paste agreement or upload PDF</h2>
                     <div class="sample-actions">
                         <span class="sample-label">Try sample:</span>
                         <button type="button" class="btn btn-sm btn-ghost" id="sample-tos-btn">SaaS Terms</button>
@@ -45,11 +53,22 @@
                 </div>
 
                 <div class="input-footer">
-                    <div class="char-count" id="char-count">0 characters</div>
+                    <div class="left-tools">
+                        <div class="char-count" id="char-count">0 characters</div>
+                        <!-- PDF Upload Option -->
+                        <div class="pdf-upload-container">
+                            <input type="file" id="pdf-file-input" accept=".pdf,application/pdf" style="display: none;" />
+                            <button type="button" class="btn btn-outline-pdf" id="upload-pdf-btn">
+                                <span>📄 Upload PDF</span>
+                            </button>
+                            <span class="pdf-filename" id="pdf-filename-display"></span>
+                        </div>
+                    </div>
+
                     <div class="action-buttons">
                         <button type="button" class="btn btn-secondary" id="clear-btn">Clear</button>
                         <button type="button" class="btn btn-primary" id="analyze-btn">
-                            <span class="btn-text">Analyze Contract</span>
+                            <span class="btn-text">Analyze contract</span>
                             <span class="btn-loader" style="display: none;"></span>
                         </button>
                     </div>
@@ -60,57 +79,124 @@
             <div id="error-banner" class="alert-box error-alert" style="display: none;" role="alert">
                 <div class="alert-icon">⚠️</div>
                 <div class="alert-content">
-                    <strong id="error-title">Analysis Failed</strong>
+                    <strong id="error-title">Analysis failed</strong>
                     <p id="error-message">Something went wrong.</p>
                 </div>
                 <button type="button" class="alert-close" id="close-error-btn" aria-label="Close error">&times;</button>
             </div>
 
-            <!-- Loading Indicator -->
+            <!-- Sequential Pipeline Loading Display -->
             <div id="loading-state" class="loading-container card" style="display: none;">
-                <div class="spinner"></div>
-                <h3>Evaluating Risk Provisions...</h3>
-                <p class="loading-subtitle">Splitting clauses and determining consumer risk levels</p>
+                <div class="pipeline-loader-header">
+                    <div class="spinner"></div>
+                    <h3 id="loading-title">Analyzing contract provisions...</h3>
+                </div>
+
+                <div class="pipeline-steps-container">
+                    <div class="pipeline-step-item" id="pipeline-step-1">
+                        <div class="step-indicator"><span class="step-dot"></span></div>
+                        <div class="step-info">
+                            <strong class="step-name">Stage 1: Fast scan</strong>
+                            <span class="step-desc">Parsing provisions and triaging initial risk tiers with Nemotron-3-Nano</span>
+                        </div>
+                    </div>
+
+                    <div class="pipeline-step-item" id="pipeline-step-2">
+                        <div class="step-indicator"><span class="step-dot"></span></div>
+                        <div class="step-info">
+                            <strong class="step-name">Stage 2: Deep analysis & fair rewrites</strong>
+                            <span class="step-desc">Evaluating flagged high/medium clauses and drafting negotiation alternatives</span>
+                        </div>
+                    </div>
+
+                    <div class="pipeline-step-item" id="pipeline-step-3">
+                        <div class="step-indicator"><span class="step-dot"></span></div>
+                        <div class="step-info">
+                            <strong class="step-name">Stage 3: Confidence & escalation check</strong>
+                            <span class="step-desc">Auditing complex or low-confidence provisions with advanced reasoning</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Results Section -->
             <section id="results-section" class="results-section" style="display: none;">
-                <!-- Overall Score Card -->
-                <div class="card score-card">
-                    <div class="score-main">
-                        <div class="score-badge-circle" id="score-badge-circle">
-                            <span class="score-number" id="overall-score-num">--</span>
-                            <span class="score-max">/100</span>
+                <!-- Hero Risk Score Card -->
+                <div class="card score-hero-card">
+                    <div class="score-hero-main">
+                        <div class="gauge-container">
+                            <svg class="score-gauge-svg" viewBox="0 0 120 120">
+                                <circle class="gauge-bg" cx="60" cy="60" r="50"></circle>
+                                <circle class="gauge-fill" id="gauge-fill-circle" cx="60" cy="60" r="50"></circle>
+                            </svg>
+                            <div class="gauge-center-text">
+                                <span class="score-number" id="overall-score-num">--</span>
+                                <span class="score-max">/ 100</span>
+                            </div>
                         </div>
-                        <div class="score-details">
-                            <div class="score-tier" id="score-tier-label">Calculating Risk...</div>
+
+                        <div class="score-hero-details">
+                            <div class="score-tier" id="score-tier-label">Calculating risk...</div>
                             <p class="score-summary" id="score-summary-text">
                                 Overall risk score based on clause severity and potential liabilities.
                             </p>
+                            <!-- Understated Pipeline Metrics Line -->
+                            <div class="pipeline-metrics-subtext" id="pipeline-metrics-text">
+                                <!-- Populated dynamically -->
+                            </div>
                         </div>
                     </div>
 
                     <div class="clause-stats" id="clause-stats">
-                        <div class="stat-pill stat-high"><span class="stat-dot"></span> <span id="count-high">0</span> High Risk</div>
-                        <div class="stat-pill stat-medium"><span class="stat-dot"></span> <span id="count-medium">0</span> Medium Risk</div>
-                        <div class="stat-pill stat-low"><span class="stat-dot"></span> <span id="count-low">0</span> Low Risk</div>
+                        <div class="stat-pill stat-high"><span class="stat-dot"></span> <span id="count-high">0</span> High risk</div>
+                        <div class="stat-pill stat-medium"><span class="stat-dot"></span> <span id="count-medium">0</span> Medium risk</div>
+                        <div class="stat-pill stat-low"><span class="stat-dot"></span> <span id="count-low">0</span> Low risk</div>
                     </div>
                 </div>
 
-                <!-- Clause Breakdown Header -->
-                <div class="clauses-header">
-                    <h2>Clause Breakdown (<span id="total-clauses-count">0</span>)</h2>
-                    <div class="filter-group">
+                <!-- View Mode Switcher -->
+                <div class="view-switch-header">
+                    <div class="view-tabs">
+                        <button type="button" class="view-tab-btn active" id="tab-doc-view" data-view="doc">
+                            <span>📄 Document view (Redline)</span>
+                        </button>
+                        <button type="button" class="view-tab-btn" id="tab-cards-view" data-view="cards">
+                            <span>📋 Clause cards (<span id="tab-cards-count">0</span>)</span>
+                        </button>
+                    </div>
+
+                    <div class="filter-group" id="filter-group">
                         <button class="filter-btn active" data-filter="all">All</button>
-                        <button class="filter-btn" data-filter="high">High</button>
-                        <button class="filter-btn" data-filter="medium">Medium</button>
-                        <button class="filter-btn" data-filter="low">Low</button>
+                        <button class="filter-btn" data-filter="high">High risk</button>
+                        <button class="filter-btn" data-filter="medium">Medium risk</button>
+                        <button class="filter-btn" data-filter="low">Low risk</button>
                     </div>
                 </div>
 
-                <!-- Clauses Container -->
-                <div class="clauses-list" id="clauses-container">
-                    <!-- Dynamic clause cards will be injected here -->
+                <!-- Section 1: Paper Document View with Redline Markup -->
+                <div id="doc-view-container" class="doc-view-container paper-card">
+                    <div class="paper-header">
+                        <div class="paper-title">Agreement transcript</div>
+                        <div class="paper-hint">Click any marked clause to inspect analysis & tracked changes</div>
+                    </div>
+
+                    <div class="paper-sheet">
+                        <div class="highlighted-document" id="highlighted-document-body">
+                            <!-- Continuous serif document with redline markup -->
+                        </div>
+                    </div>
+
+                    <!-- Inline Detail Popover Drawer -->
+                    <div class="doc-clause-popover" id="doc-clause-popover" style="display: none;">
+                        <!-- Injected dynamic popover detail -->
+                    </div>
+                </div>
+
+                <!-- Cards View: Clause Breakdown Cards -->
+                <div id="cards-view-container" class="cards-view-container" style="display: none;">
+                    <div class="clauses-list" id="clauses-container">
+                        <!-- Dynamic clause cards with redline diff view -->
+                    </div>
                 </div>
             </section>
         </main>

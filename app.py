@@ -1,4 +1,5 @@
 import os
+import io
 import json
 import re
 import logging
@@ -8,6 +9,7 @@ from flask import Flask, request, jsonify, render_template
 from openai import OpenAI
 # pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
+from pypdf import PdfReader
 
 load_dotenv()
 
@@ -18,6 +20,7 @@ app = Flask(__name__)
 
 NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
 DEFAULT_MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+DEFAULT_ESCALATION_MODEL = "ESCALATION_MODEL_PLACEHOLDER"
 
 # ---------------------------------------------------------------------------
 # Prompts
@@ -34,14 +37,37 @@ STAGE1_SYSTEM_PROMPT = (
 )
 
 STAGE2_SYSTEM_PROMPT = (
-    "You are an expert contract-risk analyst. For each provided clause, conduct a deep legal analysis. "
-    "Return a finalized risk_level ('high', 'medium', or 'low') and a concise, one-sentence plain-English explanation "
-    "of why this clause carries that risk to the user/consumer.\n\n"
+    "You are an expert contract-risk analyst. For each provided clause, conduct a deep legal analysis.\n"
+    "For each clause return:\n"
+    "1. 'risk_level': Finalized risk ('high', 'medium', or 'low').\n"
+    "2. 'confidence': Your confidence in this assessment ('high' or 'low'). Use 'low' if the clause is ambiguous or context-dependent.\n"
+    "3. 'explanation': A concise, one-sentence plain-English explanation of why this clause carries that risk.\n"
+    "4. 'suggested_revision': A rewritten, fairer version of that clause that the user could propose in negotiation (or null if low risk).\n\n"
     "Respond with ONLY a raw JSON object starting with { and ending with }:\n"
     "{\n"
     '  "clauses": [\n'
-    '    {"id": 0, "risk_level": "high|medium|low", "explanation": "..."}\n'
+    '    {\n'
+    '      "id": 0,\n'
+    '      "risk_level": "high|medium|low",\n'
+    '      "confidence": "high|low",\n'
+    '      "explanation": "...",\n'
+    '      "suggested_revision": "..."\n'
+    '    }\n'
     '  ]\n'
+    "}"
+)
+
+ESCALATION_SYSTEM_PROMPT = (
+    "You are a Senior Legal Counsel and expert contract-risk auditor. Re-analyze this flagged contract clause with maximum scrutiny.\n"
+    "Provide:\n"
+    "1. 'risk_level': Finalized assessment ('high', 'medium', or 'low').\n"
+    "2. 'explanation': A precise, one-sentence plain-English explanation of the risks.\n"
+    "3. 'suggested_revision': A fairer, balanced alternative clause for negotiation.\n\n"
+    "Respond with ONLY a raw JSON object starting with { and ending with }:\n"
+    "{\n"
+    '  "risk_level": "high|medium|low",\n'
+    '  "explanation": "...",\n'
+    '  "suggested_revision": "..."\n'
     "}"
 )
 
@@ -71,9 +97,12 @@ def clean_json_string(raw: str) -> str:
 
     return cleaned.strip()
 
-def call_model_api(client: OpenAI, system_prompt: str, user_prompt: str) -> str:
+def call_model_api(client: OpenAI, system_prompt: str, user_prompt: str, override_model: str = None) -> str:
     """Sends a completion request to Nebius Token Factory with JSON mode & fallback."""
-    model_name = os.getenv("NEBIUS_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    if override_model:
+        model_name = override_model
+    else:
+        model_name = os.getenv("NEBIUS_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -158,7 +187,11 @@ def deep_analyze(client: OpenAI, flagged_clauses: list[dict]) -> dict[int, dict]
             "preliminary_risk": c["risk_level"]
         })
 
-    user_prompt = f"Analyze these flagged contract clauses in detail:\n\n{json.dumps(user_payload, indent=2)}"
+    user_prompt = (
+        "Analyze these flagged contract clauses in detail. Return risk_level, confidence (high/low), "
+        "explanation, and suggested_revision for each:\n\n"
+        f"{json.dumps(user_payload, indent=2)}"
+    )
 
     raw_response = None
     try:
@@ -183,12 +216,56 @@ def deep_analyze(client: OpenAI, flagged_clauses: list[dict]) -> dict[int, dict]
             r_level = str(item.get("risk_level", "medium")).lower().strip()
             if r_level not in ["high", "medium", "low"]:
                 r_level = "medium"
+
+            confidence = str(item.get("confidence", "high")).lower().strip()
+            if confidence not in ["high", "low"]:
+                confidence = "high"
+
             result_map[item_id] = {
                 "risk_level": r_level,
-                "explanation": item.get("explanation", "").strip()
+                "confidence": confidence,
+                "explanation": item.get("explanation", "").strip(),
+                "suggested_revision": item.get("suggested_revision", None)
             }
 
     return result_map
+
+# ---------------------------------------------------------------------------
+# Stage 3 - Confidence-Based Model Escalation
+# ---------------------------------------------------------------------------
+def escalate_clause(client: OpenAI, clause: dict) -> dict:
+    """Stage 3: Escalates a low-confidence clause to a stronger model."""
+    escalation_model = os.getenv("NEBIUS_ESCALATION_MODEL", DEFAULT_ESCALATION_MODEL).strip() or DEFAULT_ESCALATION_MODEL
+
+    # If the user hasn't configured a distinct escalation model yet, fallback gracefully to base model
+    if escalation_model == "ESCALATION_MODEL_PLACEHOLDER":
+        escalation_model = os.getenv("NEBIUS_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+
+    user_prompt = f"Conduct an escalated senior legal review on this clause:\n\n\"{clause['text']}\""
+
+    try:
+        raw_response = call_model_api(client, ESCALATION_SYSTEM_PROMPT, user_prompt, override_model=escalation_model)
+        cleaned = clean_json_string(raw_response)
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            r_level = str(data.get("risk_level", clause.get("risk_level", "medium"))).lower().strip()
+            if r_level not in ["high", "medium", "low"]:
+                r_level = "medium"
+            return {
+                "risk_level": r_level,
+                "explanation": data.get("explanation", clause.get("explanation", "")),
+                "suggested_revision": data.get("suggested_revision", clause.get("suggested_revision")),
+                "escalated": True
+            }
+    except Exception as e:
+        logger.warning(f"Escalation call failed: {e}. Retaining Stage 2 assessment.")
+
+    return {
+        "risk_level": clause.get("risk_level", "medium"),
+        "explanation": clause.get("explanation", ""),
+        "suggested_revision": clause.get("suggested_revision"),
+        "escalated": False
+    }
 
 def compute_overall_risk_score(clauses: list[dict]) -> int:
     """Calculates contract risk score (0-100) based on finalized clause severities."""
@@ -212,6 +289,106 @@ def compute_overall_risk_score(clauses: list[dict]) -> int:
         score = min(score, 20)
 
     return max(0, min(100, score))
+
+def run_analysis_pipeline(contract_text: str) -> dict:
+    """Full multi-stage pipeline: Scan -> Deep Analysis -> Escalation -> Scoring."""
+    client = get_openai_client()
+
+    # STAGE 1: Fast Scan
+    stage1_clauses = scan_clauses(client, contract_text)
+    if not stage1_clauses:
+        raise ValueError("Could not identify distinct clauses in the provided contract text.")
+
+    flagged_clauses = []
+    for idx, clause in enumerate(stage1_clauses):
+        if clause["risk_level"] in ["high", "medium"]:
+            flagged_clauses.append({
+                "id": idx,
+                "text": clause["text"],
+                "risk_level": clause["risk_level"]
+            })
+
+    total_count = len(stage1_clauses)
+    flagged_count = len(flagged_clauses)
+    fast_tracked_count = total_count - flagged_count
+
+    print(f"\n>> Stage 1: {total_count} clauses scanned. {flagged_count} flagged for deep analysis, {fast_tracked_count} fast-tracked as low-risk.")
+
+    # STAGE 2: Deep Analysis
+    stage2_results = {}
+    if flagged_clauses:
+        stage2_results = deep_analyze(client, flagged_clauses)
+
+    # STAGE 3: Confidence-based Model Escalation
+    escalated_count = 0
+    escalation_model_name = os.getenv("NEBIUS_ESCALATION_MODEL", DEFAULT_ESCALATION_MODEL)
+    final_stage2_results = {}
+
+    for idx_id, clause_info in stage2_results.items():
+        original_clause = next((c for c in flagged_clauses if c["id"] == idx_id), None)
+        if original_clause and clause_info.get("confidence") == "low":
+            logger.info(f"Clause #{idx_id + 1} has low confidence. Escalating to advanced model...")
+            escalated_res = escalate_clause(client, {
+                "text": original_clause["text"],
+                "risk_level": clause_info.get("risk_level", "medium"),
+                "explanation": clause_info.get("explanation", ""),
+                "suggested_revision": clause_info.get("suggested_revision")
+            })
+            final_stage2_results[idx_id] = escalated_res
+            if escalated_res.get("escalated"):
+                escalated_count += 1
+        else:
+            final_stage2_results[idx_id] = {
+                "risk_level": clause_info.get("risk_level", "medium"),
+                "explanation": clause_info.get("explanation", ""),
+                "suggested_revision": clause_info.get("suggested_revision"),
+                "escalated": False
+            }
+
+    if escalated_count > 0:
+        print(f">> Stage 3: {escalated_count} clause(s) escalated to [{escalation_model_name}] due to low confidence.\n")
+    else:
+        print(">> Stage 3: High confidence across all deep analyses. 0 clauses escalated.\n")
+
+    # Merge all clauses in original order
+    final_clauses = []
+    for idx, clause in enumerate(stage1_clauses):
+        if idx in final_stage2_results:
+            deep_info = final_stage2_results[idx]
+            final_clauses.append({
+                "text": clause["text"],
+                "risk_level": deep_info.get("risk_level", clause["risk_level"]),
+                "explanation": deep_info.get("explanation") or "Identified as requiring caution during detailed review.",
+                "suggested_revision": deep_info.get("suggested_revision"),
+                "escalated": deep_info.get("escalated", False)
+            })
+        elif clause["risk_level"] in ["high", "medium"]:
+            final_clauses.append({
+                "text": clause["text"],
+                "risk_level": clause["risk_level"],
+                "explanation": "Flagged provision with potential legal, financial, or privacy risk.",
+                "suggested_revision": None,
+                "escalated": False
+            })
+        else:
+            final_clauses.append({
+                "text": clause["text"],
+                "risk_level": "low",
+                "explanation": "Standard, low-risk clause with standard terms.",
+                "suggested_revision": None,
+                "escalated": False
+            })
+
+    overall_score = compute_overall_risk_score(final_clauses)
+
+    return {
+        "overall_risk_score": overall_score,
+        "stage1_scanned": total_count,
+        "stage2_flagged": flagged_count,
+        "stage3_escalated": escalated_count,
+        "original_text": contract_text,
+        "clauses": final_clauses
+    }
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -237,71 +414,63 @@ def analyze():
                 "error": "NEBIUS_API_KEY is missing or empty in .env. Please configure your API key."
             }), 500
 
-        client = get_openai_client()
+        result = run_analysis_pipeline(contract_text)
+        return jsonify(result), 200
 
-        # STAGE 1: Fast Scan
-        stage1_clauses = scan_clauses(client, contract_text)
-        if not stage1_clauses:
-            return jsonify({
-                "error": "Could not identify distinct clauses in the provided text."
-            }), 400
-
-        # Separate flagged (high/medium) vs low-risk
-        flagged_clauses = []
-        for idx, clause in enumerate(stage1_clauses):
-            if clause["risk_level"] in ["high", "medium"]:
-                flagged_clauses.append({
-                    "id": idx,
-                    "text": clause["text"],
-                    "risk_level": clause["risk_level"]
-                })
-
-        total_count = len(stage1_clauses)
-        flagged_count = len(flagged_clauses)
-        fast_tracked_count = total_count - flagged_count
-
-        print(f"\n>> Stage 1: {total_count} clauses scanned. {flagged_count} flagged for deep analysis, {fast_tracked_count} fast-tracked as low-risk.\n")
-
-        # STAGE 2: Deep Analysis (only for flagged clauses)
-        stage2_results = {}
-        if flagged_clauses:
-            stage2_results = deep_analyze(client, flagged_clauses)
-
-        # Merge results back in original order
-        final_clauses = []
-        for idx, clause in enumerate(stage1_clauses):
-            if idx in stage2_results:
-                deep_info = stage2_results[idx]
-                final_clauses.append({
-                    "text": clause["text"],
-                    "risk_level": deep_info.get("risk_level", clause["risk_level"]),
-                    "explanation": deep_info.get("explanation") or "Identified as requiring caution during detailed review."
-                })
-            elif clause["risk_level"] in ["high", "medium"]:
-                final_clauses.append({
-                    "text": clause["text"],
-                    "risk_level": clause["risk_level"],
-                    "explanation": "Flagged provision with potential legal, financial, or privacy risk."
-                })
-            else:
-                # Fast-tracked low-risk clause
-                final_clauses.append({
-                    "text": clause["text"],
-                    "risk_level": "low",
-                    "explanation": "Standard, low-risk clause with standard terms."
-                })
-
-        overall_score = compute_overall_risk_score(final_clauses)
-
-        return jsonify({
-            "overall_risk_score": overall_score,
-            "clauses": final_clauses
-        }), 200
-
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
     except Exception as e:
         logger.exception("Error during contract analysis pipeline")
         return jsonify({
             "error": f"Analysis pipeline error: {str(e)}"
+        }), 500
+
+@app.route("/analyze-pdf", methods=["POST"])
+def analyze_pdf():
+    try:
+        api_key = os.getenv("NEBIUS_API_KEY", "").strip()
+        if not api_key:
+            return jsonify({
+                "error": "NEBIUS_API_KEY is missing or empty in .env. Please configure your API key."
+            }), 500
+
+        if "file" not in request.files and "pdf" not in request.files:
+            return jsonify({"error": "No PDF file uploaded. Please select a .pdf file."}), 400
+
+        uploaded_file = request.files.get("file") or request.files.get("pdf")
+        if not uploaded_file or uploaded_file.filename == "":
+            return jsonify({"error": "No selected file. Please upload a valid PDF."}), 400
+
+        file_bytes = uploaded_file.read()
+        if not file_bytes:
+            return jsonify({"error": "Uploaded PDF file is empty."}), 400
+
+        extracted_text = ""
+        try:
+            reader = PdfReader(io.BytesIO(file_bytes))
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    extracted_text += page_text + "\n"
+        except Exception as pdf_err:
+            logger.warning(f"pypdf extraction error: {pdf_err}")
+
+        extracted_text = extracted_text.strip()
+        if not extracted_text:
+            return jsonify({
+                "error": "Could not extract text from this PDF. Try pasting the text directly instead."
+            }), 400
+
+        logger.info(f"Successfully extracted {len(extracted_text)} characters from uploaded PDF: {uploaded_file.filename}")
+        result = run_analysis_pipeline(extracted_text)
+        return jsonify(result), 200
+
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        logger.exception("Error during PDF analysis pipeline")
+        return jsonify({
+            "error": f"PDF Analysis pipeline error: {str(e)}"
         }), 500
 
 if __name__ == "__main__":
