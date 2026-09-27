@@ -6,9 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnText = analyzeBtn.querySelector('.btn-text');
     const btnLoader = analyzeBtn.querySelector('.btn-loader');
 
-    const sampleTosBtn = document.getElementById('sample-tos-btn');
-    const sampleNdaBtn = document.getElementById('sample-nda-btn');
-
     const uploadPdfBtn = document.getElementById('upload-pdf-btn');
     const pdfFileInput = document.getElementById('pdf-file-input');
     const pdfFilenameDisplay = document.getElementById('pdf-filename-display');
@@ -52,17 +49,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const GAUGE_CIRCUMFERENCE = 314.16; // 2 * pi * 50
 
-    const SAMPLE_TOS = `1. License to User Content: By submitting any material or data to the Service, you grant the Company a perpetual, irrevocable, worldwide, royalty-free, and transferable license to use, reproduce, modify, sell, and sublicense your content for any commercial or non-commercial purpose.
-2. Unilateral Changes: The Company reserves the right to modify or terminate these Terms at any time without prior notice. Your continued use of the platform constitutes acceptance of all modifications.
-3. Class Action Waiver & Mandatory Arbitration: Any dispute arising out of or related to these Terms shall be resolved exclusively through individual binding arbitration, and you expressly waive your right to initiate or participate in any class action litigation.
-4. Limitation of Liability: In no event shall the Company be liable for any indirect, punitive, or consequential damages, and the total liability of Company shall not exceed $10 or the fees paid by you in the preceding one month.
-5. Privacy & Data Handling: We may collect device telemetry and aggregate usage logs to improve system stability and diagnose software bugs.`;
-
-    const SAMPLE_NDA = `1. Definition of Confidential Information: 'Confidential Information' includes all non-public technical, business, or proprietary information disclosed by either party, whether oral or written.
-2. Non-Compete & Non-Solicitation: For a period of 5 years following termination of discussions, the Receiving Party shall not engage in any competing business venture or solicit any employees, contractors, or customers of the Disclosing Party worldwide.
-3. Liquidated Damages: Any breach or suspected disclosure of confidential information shall trigger automatic liquidated damages of $100,000 payable immediately, without prejudice to injunctive relief.
-4. Standard of Care: The Receiving Party agrees to protect Confidential Information using the same degree of care it uses to protect its own confidential materials of like nature, but no less than reasonable care.`;
-
     // Character counter
     contractInput.addEventListener('input', () => {
         const len = contractInput.value.length;
@@ -77,23 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
         pdfFileInput.value = '';
         hideError();
         contractInput.focus();
-    });
-
-    // Sample loaders
-    sampleTosBtn.addEventListener('click', () => {
-        contractInput.value = SAMPLE_TOS;
-        contractInput.dispatchEvent(new Event('input'));
-        pdfFilenameDisplay.textContent = '';
-        pdfFileInput.value = '';
-        hideError();
-    });
-
-    sampleNdaBtn.addEventListener('click', () => {
-        contractInput.value = SAMPLE_NDA;
-        contractInput.dispatchEvent(new Event('input'));
-        pdfFilenameDisplay.textContent = '';
-        pdfFileInput.value = '';
-        hideError();
     });
 
     // PDF Upload handling
