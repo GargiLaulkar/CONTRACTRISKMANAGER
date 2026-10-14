@@ -70,12 +70,27 @@ See `compute_overall_risk_score` in `app.py`.
 
 ## Evaluation
 
-We don't just claim it works. `eval_set.json` holds 15 hand-labeled clauses (liability waivers, non-competes, auto-renewals, payment terms, force majeure and more) with expected risk levels, and `eval.py` runs them through the analysis and reports accuracy.
+## Evaluation
 
-**Result:** [ADD: X of 15 correct, accuracy Y%]
-**Where it disagreed:** [ADD: which clauses were misclassified and why, in one or two lines]
+We measure accuracy instead of assuming it. `eval_set.json` contains 15 labeled clauses across liability waivers, data ownership, auto-renewal, non-competes, arbitration, late fees, marketing rights, jurisdiction, termination, payment terms, confidentiality, force majeure and entire-agreement clauses. `eval.py` sends them to the model and compares predicted risk levels with the expected ones.
 
-Logic tests (JSON cleaning, retry behavior, validation) are in `test_app.py` and use a mocked model, so they run without an API key.
+**Result: 12 of 15 correct (80%)** using `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`.
+
+| Expected risk | Correct |
+|---|---|
+| High | 5 / 5 |
+| Medium | 2 / 5 |
+| Low | 5 / 5 |
+
+The model was reliable on clear-cut clauses: no dangerous clause was rated low and no harmless one was rated high. All three misses were in the gray middle tier:
+
+- **Mandatory arbitration with a class-action waiver:** labeled medium, predicted high. Reviewers could reasonably disagree on this label.
+- **Marketing and trade-name license:** labeled medium, predicted low (under-flagged).
+- **90-day registered-mail termination notice:** labeled medium, predicted low (under-flagged).
+
+**Scope and caveats:** the test set is small (15 clauses), the labels are judgment calls, and the benchmark scores isolated clauses with the Nano model only. It does not exercise the full contract pipeline or the Stage 3 escalation step. Treat it as a sanity check, not a certification of legal accuracy.
+
+Reproduce with `python eval.py`.
 
 ---
 
