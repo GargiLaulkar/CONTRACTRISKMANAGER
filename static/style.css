@@ -298,6 +298,24 @@ body {
     color: #e59999;
 }
 
+/* Calm notice variant for not-a-contract responses */
+.notice-alert {
+    background: rgba(58, 50, 38, 0.45);
+    border: 1px solid rgba(169, 130, 76, 0.45);
+    color: var(--color-text-primary);
+}
+
+.notice-alert strong {
+    color: #e2c08b;
+}
+
+.notice-doc-type {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+}
+
 .alert-icon {
     font-size: 1.2rem;
 }
@@ -982,4 +1000,22 @@ body {
     padding: 30px;
     color: var(--color-text-muted);
     font-size: 0.9rem;
+}
+
+/* ── Character count warning ────────────────────────────────────── */
+.char-count-warning {
+    display: block;
+    font-size: 0.78rem;
+    margin-top: 4px;
+    font-family: 'Inter', sans-serif;
+    transition: color 0.2s ease;
+}
+
+.char-count-near {
+    color: #c9a468; /* amber – matches medium-risk palette */
+}
+
+.char-count-over {
+    color: #c96b6b; /* red – matches high-risk palette */
+    font-weight: 500;
 }

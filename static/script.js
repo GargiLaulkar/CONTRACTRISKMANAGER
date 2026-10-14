@@ -14,6 +14,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorMessage = document.getElementById('error-message');
     const closeErrorBtn = document.getElementById('close-error-btn');
 
+    const notAContractBanner = document.getElementById('not-a-contract-banner');
+    const notAContractMessage = document.getElementById('not-a-contract-message');
+    const notAContractType = document.getElementById('not-a-contract-type');
+    const closeNotAContractBtn = document.getElementById('close-not-a-contract-btn');
+
     const loadingState = document.getElementById('loading-state');
     const pipelineStep1 = document.getElementById('pipeline-step-1');
     const pipelineStep2 = document.getElementById('pipeline-step-2');
@@ -50,15 +55,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const GAUGE_CIRCUMFERENCE = 314.16; // 2 * pi * 50
 
     // Character counter
+    const WARN_CHARS = 12000;
+    const MAX_CHARS = 15000;
+    const charCountWarning = document.getElementById('char-count-warning');
+
     contractInput.addEventListener('input', () => {
         const len = contractInput.value.length;
         charCount.textContent = `${len.toLocaleString()} character${len === 1 ? '' : 's'}`;
+
+        if (charCountWarning) {
+            if (len > WARN_CHARS) {
+                const remaining = MAX_CHARS - len;
+                if (remaining < 0) {
+                    charCountWarning.textContent = `⚠ Exceeds the ${MAX_CHARS.toLocaleString()}-character limit — the server will reject this.`;
+                    charCountWarning.className = 'char-count-warning char-count-over';
+                } else {
+                    charCountWarning.textContent = `${remaining.toLocaleString()} characters remaining before the demo limit.`;
+                    charCountWarning.className = 'char-count-warning char-count-near';
+                }
+                charCountWarning.style.display = 'block';
+            } else {
+                charCountWarning.style.display = 'none';
+            }
+        }
     });
 
     // Clear input
     clearBtn.addEventListener('click', () => {
         contractInput.value = '';
         charCount.textContent = '0 characters';
+        if (charCountWarning) charCountWarning.style.display = 'none';
         pdfFilenameDisplay.textContent = '';
         pdfFileInput.value = '';
         hideError();
@@ -91,6 +117,23 @@ document.addEventListener('DOMContentLoaded', () => {
         errorBanner.style.display = 'none';
     }
 
+    function showNotAContract(message, docType) {
+        if (notAContractMessage) notAContractMessage.textContent = message;
+        if (notAContractType) notAContractType.textContent = docType ? `Detected as: ${docType}` : '';
+        if (notAContractBanner) {
+            notAContractBanner.style.display = 'flex';
+            notAContractBanner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        // Hide the results section so score/badges don't show
+        resultsSection.style.display = 'none';
+    }
+
+    function hideNotAContract() {
+        if (notAContractBanner) notAContractBanner.style.display = 'none';
+    }
+
+    if (closeNotAContractBtn) closeNotAContractBtn.addEventListener('click', hideNotAContract);
+
     // Pipeline Loading Animation
     function startPipelineLoading() {
         stageTimers.forEach(t => clearTimeout(t));
@@ -103,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingState.style.display = 'block';
         resultsSection.style.display = 'none';
         hideError();
+        hideNotAContract();
 
         setStageActive(1);
 
@@ -479,11 +523,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (!response.ok) {
-                let err = data.error || `Server responded with status ${response.status}`;
-                if (data.raw_response) {
-                    err += `\n\n[Raw Model Output]:\n${data.raw_response}`;
-                }
+                // Prefer the server's friendly error message (covers 413 / 429)
+                const err = (data && data.error) ? data.error : `Server responded with status ${response.status}`;
                 showError(err);
+                return;
+            }
+
+            // not_a_contract: show calm notice, hide score/results
+            if (data.not_a_contract) {
+                showNotAContract(data.message, data.document_type);
                 return;
             }
 
@@ -512,11 +560,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (!response.ok) {
-                let err = data.error || `PDF Analysis failed with status ${response.status}`;
-                if (data.raw_response) {
-                    err += `\n\n[Raw Model Output]:\n${data.raw_response}`;
-                }
+                // Prefer the server's friendly error message (covers 413 / 429)
+                const err = (data && data.error) ? data.error : `PDF Analysis failed with status ${response.status}`;
                 showError(err);
+                return;
+            }
+
+            // not_a_contract: show calm notice, hide score/results
+            if (data.not_a_contract) {
+                showNotAContract(data.message, data.document_type);
                 return;
             }
 

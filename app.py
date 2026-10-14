@@ -3,6 +3,8 @@ import io
 import json
 import re
 import logging
+import time
+from collections import defaultdict
 # pyrefly: ignore [missing-import]
 from flask import Flask, request, jsonify, render_template
 # pyrefly: ignore [missing-import]
@@ -18,18 +20,50 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+print("GUARD v2 ACTIVE")
+
 NEBIUS_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
 DEFAULT_MODEL = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
 DEFAULT_ESCALATION_MODEL = "ESCALATION_MODEL_PLACEHOLDER"
 
 # ---------------------------------------------------------------------------
+# Abuse-protection constants
+# ---------------------------------------------------------------------------
+MAX_CHARS = int(os.getenv("MAX_CHARS", "15000"))
+MAX_PDF_BYTES = 4 * 1024 * 1024  # 4 MB
+MAX_PDF_PAGES = 20
+RATE_LIMIT_REQUESTS = 8          # max requests per window
+RATE_LIMIT_WINDOW = 3600         # window in seconds (1 hour)
+
+# In-memory store: IP -> list of request timestamps
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+
+# ---------------------------------------------------------------------------
+# Guard constants
+# ---------------------------------------------------------------------------
+MIN_CHARS = 80
+
+# Words that strongly suggest a legal/contractual document
+LEGAL_INDICATOR_WORDS = [
+    "agree", "agreement", "shall", "party", "parties", "terms", "liability",
+    "license", "tenant", "landlord", "lease", "rent", "deposit", "terminate",
+    "termination", "confidential", "warrant", "indemnif", "arbitration",
+    "governing law", "obligation", "clause", "hereby", "whereas", "fees",
+    "payment", "notice", "breach", "consent",
+]
+
+# ---------------------------------------------------------------------------
 # Prompts
 # ---------------------------------------------------------------------------
 STAGE1_SYSTEM_PROMPT = (
-    "You are a fast contract triage analyst. Split the input contract into individual clauses or provisions. "
-    "For each clause, assign a quick preliminary risk_level ('high', 'medium', or 'low'). Do not include explanations.\n\n"
+    "You are a fast contract triage analyst. First determine whether the input is a legal document "
+    "(contract, lease, NDA, terms of service, policy, etc.).\n"
+    "Then split it into individual clauses or provisions and assign a quick preliminary risk_level "
+    "('high', 'medium', or 'low') to each clause. Do not include explanations.\n\n"
     "Respond with ONLY a raw JSON object starting with { and ending with }:\n"
     "{\n"
+    '  "is_legal_document": true,\n'
+    '  "document_type": "NDA | lease | terms of service | ... | not a legal document",\n'
     '  "clauses": [\n'
     '    {"text": "...", "risk_level": "high|medium|low"}\n'
     '  ]\n'
@@ -72,8 +106,64 @@ ESCALATION_SYSTEM_PROMPT = (
 )
 
 # ---------------------------------------------------------------------------
+# Input guard
+# ---------------------------------------------------------------------------
+def heuristic_is_legal(text: str) -> bool:
+    """Returns True if the text contains at least one legal indicator word."""
+    lower = text.lower()
+    return any(word in lower for word in LEGAL_INDICATOR_WORDS)
+
+
+def validate_input(text: str) -> "dict | None":
+    """Returns None if text passes all pre-checks, or a tuple (response_dict, http_status) if not."""
+    # Minimum length
+    if len(text) < MIN_CHARS:
+        return {
+            "__status": 400,
+            "error": "Please paste more text. A contract is usually at least a few sentences long."
+        }
+
+    # Heuristic keyword check (no model call)
+    if not heuristic_is_legal(text):
+        logger.info("GUARD: heuristic found 0 legal indicators -> not_a_contract (no model call)")
+        return {
+            "__status": 200,
+            "not_a_contract": True,
+            "document_type": "not a legal document",
+            "message": (
+                "This doesn't look like a contract or legal agreement, so there's no risk to score. "
+                "Try pasting a lease, terms of service, NDA, or similar document."
+            )
+        }
+
+    return None  # all checks passed
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+def get_visitor_ip() -> str:
+    """Returns the visitor's IP from X-Forwarded-For (first value) or remote_addr."""
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def check_rate_limit(ip: str) -> bool:
+    """Returns True if the request is allowed; False if limit is exceeded.
+    Cleans up expired timestamps on each call so memory doesn't grow.
+    """
+    now = time.time()
+    cutoff = now - RATE_LIMIT_WINDOW
+    # Prune old timestamps
+    _rate_limit_store[ip] = [t for t in _rate_limit_store[ip] if t > cutoff]
+    if len(_rate_limit_store[ip]) >= RATE_LIMIT_REQUESTS:
+        return False
+    _rate_limit_store[ip].append(now)
+    return True
+
+
 def get_openai_client():
     api_key = os.getenv("NEBIUS_API_KEY", "").strip()
     return OpenAI(
@@ -133,8 +223,12 @@ def call_model_api(client: OpenAI, system_prompt: str, user_prompt: str, overrid
 # ---------------------------------------------------------------------------
 # Stage 1 - Fast Scan
 # ---------------------------------------------------------------------------
-def scan_clauses(client: OpenAI, contract_text: str) -> list[dict]:
-    """Stage 1: Fast triage to split contract into clauses with preliminary risk levels."""
+def scan_clauses(client: OpenAI, contract_text: str) -> tuple[list[dict], "bool | None", str]:
+    """Stage 1: Fast triage to split contract into clauses with preliminary risk levels.
+
+    Returns (clauses, is_legal_document, document_type).
+    is_legal_document is None when the field is missing from model output.
+    """
     raw_response = None
     try:
         logger.info("Executing Stage 1: Fast Scan...")
@@ -158,9 +252,19 @@ def scan_clauses(client: OpenAI, contract_text: str) -> list[dict]:
         cleaned = clean_json_string(raw_response)
         data = json.loads(cleaned)
 
-    clauses = data.get("clauses", []) if isinstance(data, dict) else []
+    # Extract is_legal_document and document_type from model output
+    if isinstance(data, dict):
+        raw_flag = data.get("is_legal_document")  # None if key missing
+        is_legal = bool(raw_flag) if raw_flag is not None else None
+        document_type = str(data.get("document_type", "unknown")).strip()
+        clauses_raw = data.get("clauses", [])
+    else:
+        is_legal = None
+        document_type = "unknown"
+        clauses_raw = []
+
     normalized = []
-    for item in clauses:
+    for item in clauses_raw:
         if isinstance(item, dict) and item.get("text"):
             r_level = str(item.get("risk_level", "low")).lower().strip()
             if r_level not in ["high", "medium", "low"]:
@@ -169,7 +273,7 @@ def scan_clauses(client: OpenAI, contract_text: str) -> list[dict]:
                 "text": item.get("text", "").strip(),
                 "risk_level": r_level
             })
-    return normalized
+    return normalized, is_legal, document_type
 
 # ---------------------------------------------------------------------------
 # Stage 2 - Deep Analysis
@@ -290,12 +394,30 @@ def compute_overall_risk_score(clauses: list[dict]) -> int:
 
     return max(0, min(100, score))
 
-def run_analysis_pipeline(contract_text: str) -> dict:
+def run_analysis_pipeline(contract_text: str, heuristic_hits: int = 0) -> dict:
     """Full multi-stage pipeline: Scan -> Deep Analysis -> Escalation -> Scoring."""
     client = get_openai_client()
 
     # STAGE 1: Fast Scan
-    stage1_clauses = scan_clauses(client, contract_text)
+    stage1_clauses, model_is_legal, document_type = scan_clauses(client, contract_text)
+
+    # Guard: model-level not-a-contract check
+    # If is_legal_document is explicitly False, short-circuit immediately.
+    # If the field was MISSING (None), fall back to heuristic (already passed, so continue).
+    model_flag = model_is_legal  # True / False / None
+    if model_is_legal is False:
+        print(f"GUARD: length_ok=True heuristic_hits={heuristic_hits} model_flag=False -> not_a_contract")
+        return {
+            "not_a_contract": True,
+            "document_type": document_type or "not a legal document",
+            "message": (
+                "This doesn't look like a contract or legal agreement, so there's no risk to score. "
+                "Try pasting a lease, terms of service, NDA, or similar document."
+            )
+        }
+    else:
+        print(f"GUARD: length_ok=True heuristic_hits={heuristic_hits} model_flag={model_flag} -> proceed")
+
     if not stage1_clauses:
         raise ValueError("Could not identify distinct clauses in the provided contract text.")
 
@@ -399,6 +521,11 @@ def index():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    # Rate limiting
+    ip = get_visitor_ip()
+    if not check_rate_limit(ip):
+        return jsonify({"error": "Demo limit reached. Please try again in a while."}), 429
+
     try:
         data = request.get_json(silent=True)
         if not data or not isinstance(data, dict):
@@ -408,25 +535,46 @@ def analyze():
         if not contract_text:
             return jsonify({"error": "Please provide non-empty contract text to analyze."}), 400
 
+        # Character cap
+        if len(contract_text) > MAX_CHARS:
+            return jsonify({
+                "error": f"This document is too long for the demo (limit: {MAX_CHARS:,} characters). "
+                         "Try pasting the most important sections."
+            }), 413
+
+        # Input guard (min length + heuristic keyword check)
+        guard = validate_input(contract_text)
+        if guard is not None:
+            status = guard.pop("__status", 200)
+            logger.info("GUARD blocked /analyze: status=%s", status)
+            return jsonify(guard), status
+
+        # Count heuristic hits for logging inside the pipeline
+        lower = contract_text.lower()
+        hits = sum(1 for w in LEGAL_INDICATOR_WORDS if w in lower)
+
         api_key = os.getenv("NEBIUS_API_KEY", "").strip()
         if not api_key:
             return jsonify({
                 "error": "NEBIUS_API_KEY is missing or empty in .env. Please configure your API key."
             }), 500
 
-        result = run_analysis_pipeline(contract_text)
+        result = run_analysis_pipeline(contract_text, heuristic_hits=hits)
         return jsonify(result), 200
 
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
     except Exception as e:
         logger.exception("Error during contract analysis pipeline")
-        return jsonify({
-            "error": f"Analysis pipeline error: {str(e)}"
-        }), 500
+        return jsonify({"error": "An unexpected error occurred. Please try again."}), 500
 
 @app.route("/analyze-pdf", methods=["POST"])
 def analyze_pdf():
+    # Rate limiting
+    ip = get_visitor_ip()
+    if not check_rate_limit(ip):
+        return jsonify({"error": "Demo limit reached. Please try again in a while."}), 429
+
     try:
         api_key = os.getenv("NEBIUS_API_KEY", "").strip()
         if not api_key:
@@ -445,15 +593,30 @@ def analyze_pdf():
         if not file_bytes:
             return jsonify({"error": "Uploaded PDF file is empty."}), 400
 
-        extracted_text = ""
+        # File size cap (4 MB)
+        if len(file_bytes) > MAX_PDF_BYTES:
+            return jsonify({
+                "error": "This PDF exceeds the 4 MB demo limit. Please upload a smaller file or paste the text directly."
+            }), 413
+
+        # Page count cap (check before extracting text)
         try:
             reader = PdfReader(io.BytesIO(file_bytes))
+            num_pages = len(reader.pages)
+            if num_pages > MAX_PDF_PAGES:
+                return jsonify({
+                    "error": f"This PDF has {num_pages} pages which exceeds the {MAX_PDF_PAGES}-page demo limit. "
+                             "Try uploading a shorter document or paste the key sections instead."
+                }), 413
+
+            extracted_text = ""
             for page in reader.pages:
                 page_text = page.extract_text()
                 if page_text:
                     extracted_text += page_text + "\n"
         except Exception as pdf_err:
             logger.warning(f"pypdf extraction error: {pdf_err}")
+            extracted_text = ""
 
         extracted_text = extracted_text.strip()
         if not extracted_text:
@@ -461,17 +624,32 @@ def analyze_pdf():
                 "error": "Could not extract text from this PDF. Try pasting the text directly instead."
             }), 400
 
-        logger.info(f"Successfully extracted {len(extracted_text)} characters from uploaded PDF: {uploaded_file.filename}")
-        result = run_analysis_pipeline(extracted_text)
+        # Character cap applied to extracted text too
+        if len(extracted_text) > MAX_CHARS:
+            return jsonify({
+                "error": f"This document is too long for the demo (limit: {MAX_CHARS:,} characters). "
+                         "Try pasting the most important sections."
+            }), 413
+
+        # Input guard (min length + heuristic keyword check)
+        guard = validate_input(extracted_text)
+        if guard is not None:
+            status = guard.pop("__status", 200)
+            logger.info("GUARD blocked /analyze-pdf: status=%s", status)
+            return jsonify(guard), status
+
+        lower = extracted_text.lower()
+        hits = sum(1 for w in LEGAL_INDICATOR_WORDS if w in lower)
+
+        logger.info("Extracted %d characters from uploaded PDF: %s", len(extracted_text), uploaded_file.filename)
+        result = run_analysis_pipeline(extracted_text, heuristic_hits=hits)
         return jsonify(result), 200
 
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
     except Exception as e:
         logger.exception("Error during PDF analysis pipeline")
-        return jsonify({
-            "error": f"PDF Analysis pipeline error: {str(e)}"
-        }), 500
+        return jsonify({"error": "An unexpected error occurred. Please try again."}), 500
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)

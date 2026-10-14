@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Contract Risk Explainer - Professional legal redline analysis, risk detection, and negotiation rewrites.">
     <title>Contract Risk Explainer</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=3">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -50,6 +50,7 @@
                 <div class="input-footer">
                     <div class="left-tools">
                         <div class="char-count" id="char-count">0 characters</div>
+                        <span class="char-count-warning" id="char-count-warning" style="display: none;" aria-live="polite"></span>
                         <!-- PDF Upload Option -->
                         <div class="pdf-upload-container">
                             <input type="file" id="pdf-file-input" accept=".pdf,application/pdf" style="display: none;" />
@@ -78,6 +79,17 @@
                     <p id="error-message">Something went wrong.</p>
                 </div>
                 <button type="button" class="alert-close" id="close-error-btn" aria-label="Close error">&times;</button>
+            </div>
+
+            <!-- Not-a-contract Notice -->
+            <div id="not-a-contract-banner" class="alert-box notice-alert" style="display: none;" role="status">
+                <div class="alert-icon">📄</div>
+                <div class="alert-content">
+                    <strong>Not a legal document</strong>
+                    <p id="not-a-contract-message">This doesn't look like a contract or legal agreement.</p>
+                    <span class="notice-doc-type" id="not-a-contract-type"></span>
+                </div>
+                <button type="button" class="alert-close" id="close-not-a-contract-btn" aria-label="Close notice">&times;</button>
             </div>
 
             <!-- Sequential Pipeline Loading Display -->
@@ -197,6 +209,6 @@
         </main>
     </div>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=3"></script>
 </body>
 </html>
