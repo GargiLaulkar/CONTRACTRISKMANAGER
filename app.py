@@ -115,7 +115,17 @@ def heuristic_is_legal(text: str) -> bool:
 
 
 def validate_input(text: str) -> "dict | None":
-    """Returns None if text passes all pre-checks, or a tuple (response_dict, http_status) if not."""
+    """Returns None if text passes all pre-checks, or a dict with __status if not."""
+    # Character cap
+    if len(text) > MAX_CHARS:
+        return {
+            "__status": 413,
+            "error": (
+                f"This document is too long for the demo (limit: {MAX_CHARS:,} characters). "
+                "Try pasting the most important sections."
+            )
+        }
+
     # Minimum length
     if len(text) < MIN_CHARS:
         return {
@@ -521,11 +531,6 @@ def index():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    # Rate limiting
-    ip = get_visitor_ip()
-    if not check_rate_limit(ip):
-        return jsonify({"error": "Demo limit reached. Please try again in a while."}), 429
-
     try:
         data = request.get_json(silent=True)
         if not data or not isinstance(data, dict):
@@ -535,19 +540,17 @@ def analyze():
         if not contract_text:
             return jsonify({"error": "Please provide non-empty contract text to analyze."}), 400
 
-        # Character cap
-        if len(contract_text) > MAX_CHARS:
-            return jsonify({
-                "error": f"This document is too long for the demo (limit: {MAX_CHARS:,} characters). "
-                         "Try pasting the most important sections."
-            }), 413
-
-        # Input guard (min length + heuristic keyword check)
+        # Input guard (char cap + min length + heuristic keyword check)
         guard = validate_input(contract_text)
         if guard is not None:
             status = guard.pop("__status", 200)
             logger.info("GUARD blocked /analyze: status=%s", status)
             return jsonify(guard), status
+
+        # Rate limiting: count only requests that pass validate_input
+        ip = get_visitor_ip()
+        if not check_rate_limit(ip):
+            return jsonify({"error": "Demo limit reached. Please try again in a while."}), 429
 
         # Count heuristic hits for logging inside the pipeline
         lower = contract_text.lower()
@@ -570,18 +573,7 @@ def analyze():
 
 @app.route("/analyze-pdf", methods=["POST"])
 def analyze_pdf():
-    # Rate limiting
-    ip = get_visitor_ip()
-    if not check_rate_limit(ip):
-        return jsonify({"error": "Demo limit reached. Please try again in a while."}), 429
-
     try:
-        api_key = os.getenv("NEBIUS_API_KEY", "").strip()
-        if not api_key:
-            return jsonify({
-                "error": "NEBIUS_API_KEY is missing or empty in .env. Please configure your API key."
-            }), 500
-
         if "file" not in request.files and "pdf" not in request.files:
             return jsonify({"error": "No PDF file uploaded. Please select a .pdf file."}), 400
 
@@ -624,19 +616,23 @@ def analyze_pdf():
                 "error": "Could not extract text from this PDF. Try pasting the text directly instead."
             }), 400
 
-        # Character cap applied to extracted text too
-        if len(extracted_text) > MAX_CHARS:
-            return jsonify({
-                "error": f"This document is too long for the demo (limit: {MAX_CHARS:,} characters). "
-                         "Try pasting the most important sections."
-            }), 413
-
-        # Input guard (min length + heuristic keyword check)
+        # Input guard (char cap + min length + heuristic keyword check)
         guard = validate_input(extracted_text)
         if guard is not None:
             status = guard.pop("__status", 200)
             logger.info("GUARD blocked /analyze-pdf: status=%s", status)
             return jsonify(guard), status
+
+        # Rate limiting: count only requests that pass validate_input
+        ip = get_visitor_ip()
+        if not check_rate_limit(ip):
+            return jsonify({"error": "Demo limit reached. Please try again in a while."}), 429
+
+        api_key = os.getenv("NEBIUS_API_KEY", "").strip()
+        if not api_key:
+            return jsonify({
+                "error": "NEBIUS_API_KEY is missing or empty in .env. Please configure your API key."
+            }), 500
 
         lower = extracted_text.lower()
         hits = sum(1 for w in LEGAL_INDICATOR_WORDS if w in lower)
